@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>Whack-a-Mole</title>
+	<style>
+		:root{--bg:#f6f8fa;--card:#fff;--accent:#ff6b6b;--muted:#667085}
+		html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,#e9f2ff 0%,var(--bg) 100%);color:#0f172a}
+		.wrap{max-width:900px;margin:28px auto;padding:20px}
+		header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+		h1{font-size:1.4rem;margin:0}
+		.controls{display:flex;gap:10px;align-items:center}
+		button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+		.panel{display:flex;gap:16px;align-items:center}
+		.score{background:var(--card);padding:10px 14px;border-radius:10px;box-shadow:0 6px 18px rgba(12,38,63,0.08)}
+		.score b{display:block;font-size:1.6rem}
+		.board{margin-top:18px;background:transparent;padding:16px;border-radius:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:540px}
+		.hole{position:relative;height:140px;background:linear-gradient(180deg,#dfefff,#fff);border-radius:12px;box-shadow:inset 0 -6px 14px rgba(12,38,63,0.04);overflow:hidden;display:flex;align-items:end;justify-content:center}
+		.mole{width:72px;height:72px;background:#4b5563;border-radius:50%;transform:translateY(120%);transition:transform .18s cubic-bezier(.2,.9,.2,1);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;user-select:none;cursor:pointer}
+		.mole.up{transform:translateY(0)}
+		.mole.hit{background:#2b8a3e;transform:scale(.95)}
+		.footer{margin-top:18px;color:var(--muted);font-size:0.9rem}
+		@media(max-width:600px){.hole{height:110px}.mole{width:56px;height:56px}}
+	</style>
+</head>
+<body>
+	<div class="wrap">
+		<header>
+			<h1>Whack-a-Mole</h1>
+			<div class="controls">
+				<div class="panel score">
+					<div style="font-size:0.85rem;color:var(--muted)">Puntuación</div>
+					<b id="score">0</b>
+				</div>
+				<div class="panel">
+					<div style="text-align:right;margin-right:6px;color:var(--muted);font-size:0.85rem">Tiempo</div>
+					<div class="score" style="padding:10px 12px;"><b id="time">30</b>s</div>
+				</div>
+				<div class="panel">
+					<label for="difficulty" style="font-size:0.85rem;color:var(--muted);margin-right:6px">Dificultad</label>
+					<select id="difficulty" style="padding:6px;border-radius:8px;border:1px solid #e2e8f0">
+						<option value="easy">Fácil</option>
+						<option value="medium" selected>Medio</option>
+						<option value="hard">Difícil</option>
+					</select>
+				</div>
+				<div class="panel score" style="background:#f3f4f6">
+					<div style="font-size:0.75rem;color:var(--muted)">Mejor</div>
+					<b id="best">0</b>
+				</div>
+				<button id="startBtn">Iniciar</button>
+				<button id="resetBtn" style="background:#64748b">Reiniciar</button>
+			</div>
+		</header>
+
+		<main>
+			<div class="board" id="board">
+				<div class="hole" data-index="0"><div class="mole" data-index="0">🐹</div></div>
+				<div class="hole" data-index="1"><div class="mole" data-index="1">🐹</div></div>
+				<div class="hole" data-index="2"><div class="mole" data-index="2">🐹</div></div>
+				<div class="hole" data-index="3"><div class="mole" data-index="3">🐹</div></div>
+				<div class="hole" data-index="4"><div class="mole" data-index="4">🐹</div></div>
+				<div class="hole" data-index="5"><div class="mole" data-index="5">🐹</div></div>
+				<div class="hole" data-index="6"><div class="mole" data-index="6">🐹</div></div>
+				<div class="hole" data-index="7"><div class="mole" data-index="7">🐹</div></div>
+				<div class="hole" data-index="8"><div class="mole" data-index="8">🐹</div></div>
+			</div>
+
+			<div class="footer">Golpea los topos tocando la carita. Cada acierto suma 1 punto. Ajusta la duración desde el código si lo deseas.</div>
+		</main>
+	</div>
+
+	<script>
+		// Difficulty settings (seconds / ms)
+		const DIFFICULTY_SETTINGS = {
+			easy: {GAME_TIME: 40, MOLE_INTERVAL: 900, MOLE_UP_TIME: 900},
+			medium: {GAME_TIME: 30, MOLE_INTERVAL: 800, MOLE_UP_TIME: 750},
+			hard: {GAME_TIME: 20, MOLE_INTERVAL: 600, MOLE_UP_TIME: 500}
+		};
+
+		const holes = Array.from(document.querySelectorAll('.hole'));
+		const moles = Array.from(document.querySelectorAll('.mole'));
+		const scoreEl = document.getElementById('score');
+		const timeEl = document.getElementById('time');
+		const startBtn = document.getElementById('startBtn');
+		const resetBtn = document.getElementById('resetBtn');
+		const difficultySelect = document.getElementById('difficulty');
+		const bestEl = document.getElementById('best');
+
+		// mutable current settings (will be set on start)
+		let GAME_TIME = DIFFICULTY_SETTINGS.medium.GAME_TIME;
+		let MOLE_INTERVAL = DIFFICULTY_SETTINGS.medium.MOLE_INTERVAL;
+		let MOLE_UP_TIME = DIFFICULTY_SETTINGS.medium.MOLE_UP_TIME;
+
+		// best score persistence
+		let bestScore = parseInt(localStorage.getItem('wakamole_best') || '0', 10);
+		bestEl.textContent = bestScore;
+
+		let lastIndex = null;
+		let score = 0;
+		let timeLeft = GAME_TIME;
+		let gameInterval = null;
+		let countdownInterval = null;
+		let running = false;
+
+		function randomIndex(){
+			let idx = Math.floor(Math.random() * holes.length);
+			if(idx === lastIndex){
+				return randomIndex();
+			}
+			lastIndex = idx;
+			return idx;
+		}
+
+		function showMole(){
+			const idx = randomIndex();
+			const mole = moles[idx];
+			if(!mole) return;
+			mole.classList.add('up');
+			mole.dataset.whacked = 'false';
+			// hide after some time
+			setTimeout(()=>{
+				mole.classList.remove('up');
+			}, MOLE_UP_TIME);
+		}
+
+		function spawnLoop(){
+			gameInterval = setInterval(()=>{
+				if(!running) return;
+				showMole();
+			}, MOLE_INTERVAL);
+		}
+
+		function startGame(){
+			if(running) return;
+			// load selected difficulty
+			const level = difficultySelect.value || 'medium';
+			const s = DIFFICULTY_SETTINGS[level];
+			GAME_TIME = s.GAME_TIME; MOLE_INTERVAL = s.MOLE_INTERVAL; MOLE_UP_TIME = s.MOLE_UP_TIME;
+
+			running = true;
+			score = 0; scoreEl.textContent = score;
+			timeLeft = GAME_TIME; timeEl.textContent = timeLeft;
+			// initial mole
+			showMole();
+			spawnLoop();
+			countdownInterval = setInterval(()=>{
+				timeLeft -= 1;
+				timeEl.textContent = timeLeft;
+				if(timeLeft <= 0){
+					endGame();
+				}
+			}, 1000);
+		}
+
+		function endGame(){
+			running = false;
+			clearInterval(gameInterval);
+			clearInterval(countdownInterval);
+			// hide any moles
+			moles.forEach(m=>m.classList.remove('up'));
+			// check best
+			if(score > bestScore){
+				bestScore = score;
+				localStorage.setItem('wakamole_best', String(bestScore));
+				bestEl.textContent = bestScore;
+				alert('¡Nuevo récord! Tu puntuación: ' + score);
+			} else {
+				alert('Tiempo! Tu puntuación: ' + score);
+			}
+		}
+
+		function resetGame(){
+			running = false;
+			clearInterval(gameInterval);
+			clearInterval(countdownInterval);
+			score = 0; timeLeft = GAME_TIME;
+			scoreEl.textContent = score;
+			timeEl.textContent = timeLeft;
+			moles.forEach(m=>{ m.classList.remove('up'); m.dataset.whacked='false'; });
+		}
+
+		// Handle mole clicks (whack)
+		moles.forEach(mole => {
+			mole.addEventListener('click', (e)=>{
+				if(!running) return;
+				if(mole.dataset.whacked === 'true') return;
+				if(!mole.classList.contains('up')) return; // only when visible
+				mole.dataset.whacked = 'true';
+				mole.classList.add('hit');
+				score += 1;
+				scoreEl.textContent = score;
+				setTimeout(()=>{
+					mole.classList.remove('hit');
+					mole.classList.remove('up');
+				}, 250);
+			});
+		});
+
+		startBtn.addEventListener('click', startGame);
+		resetBtn.addEventListener('click', resetGame);
+
+		// keyboard accessibility: space to whack focused mole
+		document.addEventListener('keydown',(e)=>{
+			if(e.code==='Space'){ e.preventDefault(); document.activeElement.click && document.activeElement.click(); }
+		});
+
+		// expose for debugging in console
+		window._wakamole = {startGame, endGame, resetGame};
+	</script>
+</body>
+</html>
+
