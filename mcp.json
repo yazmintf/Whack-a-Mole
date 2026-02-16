@@ -1,0 +1,15 @@
+{
+  "name": "Whack-a-Mole",
+  "version": "0.1.0",
+  "mcp": {
+    "protocol": "1.0",
+    "entry": "index.html",
+    "type": "static-site"
+  },
+  "hooks": {
+    "onPush": {
+      "url": "http://<MCP_HOST>/events/github",
+      "secret": "<REPLACE_WITH_SECRET>"
+    }
+  }
+}
